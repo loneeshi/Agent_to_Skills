@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/dp/Agent_research/design/Agent_to_Skills",
+      "program": "/Users/dp/Agent_research/design/Agent_to_Skills/build/Debug/outDebug"
+    }
+  ]
+}
