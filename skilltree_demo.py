@@ -1,69 +1,40 @@
-"""
-Minimal demo script for the SkillTree initial implementation.
-Run to see insertion and search in action.
+# test_skilltree_dialog.py
+from skilltree import SkillTree, search_and_show
+import time
 
-Usage (zsh):
-  # Optional environment (OpenAI or HF)
-  # export EMBEDDING_PROVIDER=openai
-  # export EMBEDDING_MODEL=text-embedding-3-large
-  # export OPENAI_API_KEY=sk-...
-  # Or local:
-  # export EMBEDDING_PROVIDER=hf
-  # export EMBEDDING_MODEL=intfloat/e5-large-v2
+def run_demo():
+    st = SkillTree()
+    st.initialize("root knowledge")
 
-  python -m Agent_to_Skills.skilltree_demo
-"""
-from __future__ import annotations
+    # 多轮对话（示例），把“用户话语”写入树
+    turns = [
+        ("user: 我想学习 C++ 的类和继承", "knowledge"),
+        ("assistant: 好的，你先学会类的基本语法：class A { public: int x; };", "knowledge"),
+        ("user: 如何实现虚函数和多态？", "question"),
+        ("assistant: 在基类用 virtual 修饰函数，子类 override，实现多态", "knowledge"),
+        ("user: 我想写一个虚析构函数的例子", "question")
+    ]
 
-import os
-import sys
+    # 把带标签的知识写入 tree（仅把 knowledge 插入）
+    for text, tag in turns:
+        if tag == "knowledge":
+            st.add(text, timestamp=time.time())
+            print("加入知识:", text)
 
-try:
-    from Agent_to_Skills.SkillTree import (
-        skill_tree,
-        initialize_skill_tree,
-        add_text,
-        search,
-    )
-except Exception:
-    # Fallback when running as a plain script from this folder
-    sys.path.append(os.path.dirname(__file__))
-    from SkillTree import (
-        skill_tree,
-        initialize_skill_tree,
-        add_text,
-        search,
-    )
+    # 现在做检索：模拟用户问“怎么实现多态？”
+    query = "怎么实现 C++ 的多态？"
+    print("\n检索查询：", query)
+    res = search_and_show(st, query, top_k=3)
+    for r in res:
+        print("score:", round(r['score'], 4))
+        print("node:", r['node_text'])
+        print("path:", " -> ".join(r['path_texts']))
+        print("children_count:", r['children_count'])
+        print("----")
 
-
-def main():
-    # Choose a default local embedding if no OpenAI/Azure keys and user didn't set provider
-    if not os.getenv("EMBEDDING_PROVIDER"):
-        if not (os.getenv("OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")):
-            os.environ["EMBEDDING_PROVIDER"] = "hf"
-            os.environ["EMBEDDING_MODEL"] = os.getenv("EMBEDDING_MODEL", "intfloat/e5-large-v2")
-
-    initialize_skill_tree("root")
-
-    add_text("Write a Python function to parse JSON", time_stamp=1)
-    add_text("Implement JSON parsing in Python using json.loads", time_stamp=2)
-    add_text("Calculate cosine similarity between two vectors", time_stamp=3)
-    add_text("Parse XML files in Python", time_stamp=4)
-
-    q = "How to parse JSON text in Python?"
-    path, children = search(q)
-
-    print("Query:", q)
-    print("Path to best node:")
-    for i, n in enumerate(path):
-        snippet = n.string[:80].replace("\n", " ")
-        print(f"  {i}. {snippet}")
-
-    print("Children of best node:")
-    for i, ch in enumerate(children):
-        snippet = ch.string[:80].replace("\n", " ")
-        print(f"  - {snippet}")
-
+    # 展示树序列化（简短）
+    print("\n当前树（简短序列化）")
+    print(st.serialize()[:1200])
 
 if __name__ == "__main__":
-    main()
+    run_demo()

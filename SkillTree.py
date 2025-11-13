@@ -1,182 +1,98 @@
-from typing import List, Tuple, Optional
-import math
-
-# Lightweight embedding wiring: you can swap providers in embeddings.py
-try:
-    from embeddings import get_embedder
-except Exception:
-    # Fallback import if running from a different CWD
-    import os, sys
-    sys.path.append(os.path.dirname(__file__))
-    from embeddings import get_embedder
-
-
-class SkillTree:
-    def __init__(self):
-        self.nodelist: List["Node"] = []
-        self.root: Optional["Node"] = None
-
-
-# Provide a module-level tree to avoid NameErrors in placeholder helpers
-skill_tree = SkillTree()
-
-class Node:
-    def __init__(self, string: str, time_stamp: float, embedding: List[float]):
-        self.string = string
-        self.time_stamp = time_stamp
-        self.embedding = embedding
-        self.children: List["Node"] = []
+from typing import List, Optional
+import math, random, time
 
 def embed(text: str) -> List[float]:
-    """Embed text using the configured provider (see embeddings.py).
+    random.seed(hash(text) % (2**32))
+    vec = [random.gauss(0, 1) for _ in range(128)]
+    norm = math.sqrt(sum(x*x for x in vec))
+    return [x / norm for x in vec]
 
-    Returns a dense vector list[float].
-    """
-    return get_embedder().embed(text)
+def cosine(a: List[float], b: List[float]) -> float:
+    dot = sum(x*y for x, y in zip(a, b))
+    na = math.sqrt(sum(x*x for x in a))
+    nb = math.sqrt(sum(x*x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
 
-def put_node(cnew: str, root: "Node", threshold_function, time_stamp: float = 0.0):
-    enew = embed(cnew)  # Step 1: Embed the new information
-    vnew = Node(cnew, time_stamp, enew)
-    attached = insert_node(root, vnew, 0, threshold_function)  # Step 2: Insert the node
-    # Track in flat list only if it was attached as a distinct node
-    if attached and (vnew not in skill_tree.nodelist):
-        skill_tree.nodelist.append(vnew)
-
-def insert_node(v: "Node", vnew: "Node", d: int, threshold_function) -> bool:
-    if not v.children:
-        # Convert leaf into an internal node so v and vnew can be compared at the same level
-        existing_child = Node(v.string, v.time_stamp, v.embedding)
-        v.children.append(existing_child)
-
-    si = compute_similarity(vnew.embedding, [child.embedding for child in v.children])
-    vbest, smax = find_best_child(v.children, si)
-
-    if smax >= threshold_function(d):
-        aggregated_content = aggregate(vbest.string, vnew.string)
-        vbest.string = aggregated_content
-        vbest.embedding = embed(aggregated_content)
-        # We merged vnew into vbest; stop routing and report no new node attached
-        return False
-    else:
-        v.children.append(vnew)
-        return True
-
-def compute_similarity(enew: List[float], embeddings: List[List[float]]) -> List[float]:
-    """Compute cosine similarity between a query embedding and a list of embeddings."""
-    def _cos(a: List[float], b: List[float]) -> float:
-        dot = sum(x*y for x, y in zip(a, b))
-        na = math.sqrt(sum(x*x for x in a))
-        nb = math.sqrt(sum(y*y for y in b))
-        if na == 0 or nb == 0:
-            return 0.0
-        return dot / (na * nb)
-
-    return [_cos(enew, e) for e in embeddings]
-
-def find_best_child(children: List["Node"], similarities: List[float]) -> Tuple["Node", float]:
-    max_index = similarities.index(max(similarities))
-    return children[max_index], similarities[max_index]
+def compute_similarity(e_new: List[float], embeddings: List[List[float]]) -> List[float]:
+    return [cosine(e_new, e) for e in embeddings]
 
 def aggregate(c1: str, c2: str) -> str:
-    # Simple aggregation; replace with your summarizer if needed
-    return c1 + "\n" + c2
+    a = [s.strip() for s in c1.splitlines() if s.strip()]
+    b = [s.strip() for s in c2.splitlines() if s.strip()]
+    out = a[:]
+    for s in b:
+        if not any(s in x or x in s for x in out):
+            out.append(s)
+    return "\n".join(out)
 
-def cut_tree(threshold: float):
-    skill_tree.nodelist = [node for node in skill_tree.nodelist if node.time_stamp <= threshold]
+def default_threshold(d: int) -> float:
+    return max(0.55, 0.85 - 0.05*d)
 
-def default_threshold(depth: int) -> float:
-    """Default similarity threshold schedule by depth.
-    Starts strict and relaxes slightly with depth.
-    """
-    return max(0.60, 0.85 - 0.05 * depth)
+class Node:
+    def __init__(self, text: str):
+        self.text = text
+        self.embedding = embed(text)
+        self.timestamp = time.time()
+        self.children: List["Node"] = []
+
+class SkillTree:
+    def __init__(self, root_text: str = "root"):
+        self.root = Node(root_text)
+
+    def insert(self, text: str, threshold_fn=default_threshold):
+        v_new = Node(text)
+        self._insert_node(self.root, v_new, 0, threshold_fn)
+
+    def _insert_node(self, v: Node, v_new: Node, d: int, threshold_fn):
+        leaf_created = False
+        if not v.children:
+            leaf = Node(v.text)
+            v.children.append(leaf)
+            leaf_created = True
+
+        sims = compute_similarity(v_new.embedding, [c.embedding for c in v.children])
+        best_idx = max(range(len(sims)), key=lambda i: sims[i])
+        smax = sims[best_idx]
+        v_best = v.children[best_idx]
+
+        if smax >= threshold_fn(d):
+            v.text = aggregate(v.text, v_new.text)
+            v.embedding = embed(v.text)
+            self._insert_node(v_best, v_new, d + 1, threshold_fn)
+        else:
+            if leaf_created:
+                v.children.clear()  # 删除刚刚展开的 leaf
+            v.children.append(v_new)
 
 
-def initialize_skill_tree(root_text: str = "root", time_stamp: float = 0.0):
-    """Initialize the global skill_tree with a root node if not present."""
-    if skill_tree.root is None:
-        root_embedding = embed(root_text)
-        root = Node(root_text, time_stamp, root_embedding)
-        skill_tree.root = root
-        skill_tree.nodelist = [root]
+    def search(self, query: str):
+        q_emb = embed(query)
+        best, smax = None, -1
+        stack = [self.root]
+        while stack:
+            node = stack.pop()
+            s = cosine(q_emb, node.embedding)
+            if s > smax:
+                smax, best = s, node
+            stack.extend(node.children)
+        return best, smax
 
+    def print_tree(self, node: Optional[Node]=None, depth: int=0):
+        node = node or self.root
+        print("  "*depth + f"- {node.text[:60]}")
+        for ch in node.children:
+            self.print_tree(ch, depth+1)
 
-def add_text(text: str, time_stamp: float = 0.0, threshold_function=default_threshold) -> Node:
-    """High-level helper to add text into the tree.
-
-    Ensures the tree is initialized and inserts the new node according to the
-    hierarchical similarity routing.
-    """
-    if skill_tree.root is None:
-        initialize_skill_tree()
-    put_node(text, skill_tree.root, threshold_function, time_stamp=time_stamp)
-    return skill_tree.nodelist[-1]
-
-
-def search(task: str):
-    """Return (path_to_best_node, children_of_best_node) for the given task text.
-
-    Strategy: compute the query embedding, find the most similar node across the
-    flat list (nodelist) for robustness, then reconstruct the path via DFS.
-    """
-    if skill_tree.root is None or not skill_tree.nodelist:
-        return [], []
-
-    q_emb = embed(task)
-    sims = compute_similarity(q_emb, [n.embedding for n in skill_tree.nodelist])
-    best_idx = sims.index(max(sims))
-    best_node = skill_tree.nodelist[best_idx]
-    path = get_path_to_node(skill_tree.root, best_node)
-    return path, get_children_of_node(best_node)
-
-def compare_task_with_node(task: str, node: "Node", threshold: float = 0.70) -> bool:
-    q_emb = embed(task)
-    s = compute_similarity(q_emb, [node.embedding])[0]
-    return s >= threshold
-
-def get_path_to_node(root: "Node", target_node: "Node") -> List["Node"]:
-    """Return list of nodes from root to target (inclusive). Empty if not found."""
-    path: List[Node] = []
-
-    def _dfs(cur: Node) -> bool:
-        path.append(cur)
-        if cur is target_node:
-            return True
-        for ch in cur.children:
-            if _dfs(ch):
-                return True
-        path.pop()
-        return False
-
-    if root and _dfs(root):
-        return path
-    return []
-
-def get_children_of_node(node: "Node") -> List["Node"]:
-    return node.children if node else []
-
-def continue_searching(children: List["Node"]):
-    # Kept for backward compatibility; not used in new search.
-    return []
-
-def find_task(context: str):
-    # Minimal initial version: identity mapping
-    return abstract_solution(context)
-
-def abstract_solution(context: str):
-    # Initial simple heuristic: use raw context as task.
-    return context.strip()
-
-def use_skill_time():
-    user_input = get_user_input()
-    task = find_task(user_input)
-    a2s = search(task)
-    interact_with_agent(a2s)
-
-def get_user_input():
-    # Placeholder for getting user input logic
-    pass
-
-def interact_with_agent(a2s):
-    # Placeholder for agent interaction logic
-    pass
-
+if __name__ == "__main__":
+    st = SkillTree("root knowledge")
+    st.insert("我想学习 C++ 的类和继承")
+    st.insert("好的，你先学会类的基本语法：class A { public: int x; };")
+    st.insert("在基类用 virtual 修饰函数，子类 override，实现多态")
+    st.insert("如何实现多态？")
+    st.insert("如何使用纯虚函数？")
+    st.print_tree()
+    q = "多态怎么实现？"
+    n, s = st.search(q)
+    print("\n查询：", q)
+    print("最相似节点：", n.text)
+    print("相似度：", round(s,4))
