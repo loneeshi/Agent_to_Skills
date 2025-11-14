@@ -1,115 +1,161 @@
-# SkillTree (prototype)
+# SkillTree Engine (Schema v1.0)
 
-A lightweight, API-free prototype for building a hierarchical skill/knowledge tree from short texts. It uses a toy embedding function (no network calls) so you can test insertion and search locally.
+This directory now implements a production-oriented SkillTree schema and runtime engine for agent skill acquisition, retrieval, scheduling, and maintenance. It replaces the earlier toy prototype that used random embeddings and ad‑hoc insertion logic.
 
-## What’s here
+## Core Concepts
 
-- `SkillTree.py` — minimal SkillTree implementation with a toy embedder (random Gaussian vectors seeded by text hash), plus a small demo in `__main__`.
-- `embeddings.py` — optional real embedding providers (OpenAI or local Hugging Face). Not wired into `SkillTree.py` yet.
-- `prompt.py` — a prompt template for summarizing a dialog into structured steps/knowledge.
-- `skilltree_demo.py` — an older demo that expects a richer API (`initialize/add/search_and_show/serialize`). It’s not aligned with `SkillTree.py` yet (see Notes below).
+Each skill captures:
+- Identity & description (`id`, `name`, `description`)
+- Activation signals (`triggers` – intent/keyword/pattern/state)
+- Success signals (`success_conditions` – task completion / confirmation / state)
+- Graph relations (`preconditions`, `postconditions`, `subskills`) forming a hybrid tree + DAG
+- Operational metadata (timestamps, example turns, provenance, merge history)
+- Confidence (0–1) representing mastery / reliability
 
-## Quick start (no API, local only)
+The full tree is a JSON document following the stable schema:
 
-Run the built-in demo that inserts a few Chinese C++-related snippets, prints the tree, and does a similarity search:
+```json
+{
+  "skill_tree_version": "1.0",
+  "root_skills": [ { /* Skill objects */ } ]
+}
+```
+
+See `skilltree_engine/schema.py` for dataclass definitions and (de)serialization.
+
+## What’s New vs. Prototype
+
+| Feature | Prototype | Engine |
+|---------|-----------|--------|
+| Deterministic structure | Order-dependent clustering | Explicit graph references |
+| Skill schema richness | Minimal text nodes | Full triggers/success/DAG/meta/confidence |
+| CRUD operations | Implicit via insertion | First-class add/update/delete/merge |
+| Validation | None | Cycle + missing ref detection |
+| Retrieval | Cosine over toy vectors | Intent & keyword matching (extensible) |
+| Scheduling | N/A | Topological ordering via preconditions |
+| Gap detection | N/A | Referenced-but-missing skill suggestions |
+
+## Modules
+
+- `skilltree_engine/schema.py` – Schema dataclasses, JSON round‑trip, validation helpers.
+- `skilltree_engine/runtime.py` – High-level operations (ingestion, updates, retrieval, scheduling, gap suggestions).
+- `skilltree_engine/semantic.py` – Lightweight bag-of-words embedding index + semantic search helpers.
+- `skilltree_engine/decompose_skills.py` – Heuristic decomposition script to expand broader tasks into atomic children.
+- `skilltree_engine/extraction_prompt.txt` – Prompt template for LLM skill extraction & generation.
+- `skilltree_engine/pipeline_demo.py` – End‑to‑end mock pipeline: dialogue → extraction output → ingestion → updates → retrieval & scheduling.
+- `skilltree_engine/test_skilltree.py` – Basic unit tests (round‑trip, CRUD/merge, retrieval, scheduling).
+
+## Quick Start
+
+Run the demo pipeline:
 
 ```bash
 cd design/Agent_to_Skills
-python SkillTree.py
+python -m skilltree_engine.pipeline_demo
 ```
 
-You should see a textual tree and the most similar node for the query like “多态怎么实现？”. Because the current embeddings are toy/random (see below), exact outputs vary between runs/processes.
+Run tests:
 
-### Programmatic usage (toy embedder)
+```bash
+python -m skilltree_engine.test_skilltree
+```
+
+## Dialogue-to-Tree Export
+
+Turn free-form dialogue snippets into a nested SkillTree JSON (matching the
+`outputs/skilltree/*.json` structure) with the new helper:
+
+```bash
+cd design/Agent_to_Skills
+python tools/dialogue_to_skilltree.py path/to/dialogue_snippets.txt --output outputs/skilltree/my_dialogue_tree.json
+```
+
+The script calls `skilltree_core.dialogue_export.export_dialogue_tree_to_json`,
+which learns skills from the snippets, optionally attaches them under a parent
+skill, and writes the nested representation (with `children` arrays) so it can be
+consumed by downstream planners or visualization tools.
+
+Load a SkillTree from JSON:
 
 ```python
-from SkillTree import SkillTree
-
-st = SkillTree("root knowledge")
-st.insert("我想学习 C++ 的类和继承")
-st.insert("在基类用 virtual 修饰函数，子类 override，实现多态")
-
-node, score = st.search("怎么实现 C++ 的多态？")
-print(node.text, score)
+from skilltree_engine.schema import SkillTree
+st = SkillTree.from_json(open("path/to/tree.json", "r", encoding="utf-8").read())
+print(st.validate())
 ```
 
-## How it works (prototype design)
-
-- Embeddings: `embed(text)` returns a 128-d vector sampled from a Gaussian, normalized to unit length. It is seeded by `hash(text)`, so within a single Python process texts map deterministically; across processes the built-in `hash` salt may differ (see Caveats).
-- Similarity: cosine similarity.
-- Insertion (`SkillTree.insert`):
-  - If the current node `v` has no children, it temporarily creates a leaf-copy of itself as a child (so `v` acts like an aggregator).
-  - It finds the child with maximum similarity to the new node (`best_idx = max(range(len(sims)), key=lambda i: sims[i])`).
-  - If similarity ≥ `threshold(depth)`, it aggregates new text into `v.text` (deduplicating lines) and recurses into the best child.
-  - Otherwise, if that leaf-copy was just created for this decision, it is removed and the new node is appended as a child. This keeps structure shallow when items are dissimilar.
-- Threshold schedule: `default_threshold(d) = max(0.55, 0.85 - 0.05*d)` — stricter near the root, looser deeper down.
-- Search: DFS over nodes using cosine similarity with the query.
-
-## Current API surface
-
-- Class `SkillTree(root_text: str = "root")`
-  - `insert(text: str, threshold_fn=default_threshold)`
-  - `search(query: str) -> (best_node, score)`
-  - `print_tree(node: Optional[Node] = None, depth: int = 0)`
-- Class `Node`
-  - `text: str`
-  - `embedding: List[float]`
-  - `timestamp: float`
-  - `children: List[Node]`
-
-## Caveats and limitations
-
-- Toy embeddings only: not semantically meaningful. Results are for structure/shaping tests, not accuracy.
-- Cross-run variability: Python’s `hash()` is salted per process by default, so embeddings can differ between runs. To stabilize across runs you can either:
-  - set `PYTHONHASHSEED=0` when running Python; or
-  - replace `hash(text)` with a stable hash (e.g., `hashlib.md5(text.encode()).hexdigest()`).
-- No persistence/serialization: there’s no `serialize()`/`deserialize()` in `SkillTree.py` yet.
-- `skilltree_demo.py` mismatch: that file expects methods like `initialize`, `add`, `serialize`, and a helper `search_and_show`, which aren’t implemented here.
-- No balancing or re-clustering: structure depends on insertion order; there’s no rebalancing.
-
-## Roadmap (suggested next steps)
-
-1. Deterministic embedding seeding
-   - Swap `hash(text)` for a stable hash (e.g., MD5/SHA1) to get run-to-run repeatability.
-2. Real embeddings (optional)
-   - Integrate `embeddings.py` so you can choose between `openai` and `hf` providers via env vars:
-     - `EMBEDDING_PROVIDER=openai|hf`
-     - `EMBEDDING_MODEL` (e.g., `text-embedding-3-large` or `intfloat/e5-base-v2`)
-     - For HF on macOS: `DEVICE=mps` is often fast; or `cpu`/`cuda`.
-3. API alignment with demo
-   - Add: `initialize(root_text)`, `add(text, timestamp=None)`, `serialize()` (JSON), and a `search_and_show(st, query, top_k)` utility to match `skilltree_demo.py`.
-4. Persistence
-   - Implement JSON serialization for the tree and a simple loader.
-5. Quality-of-life
-   - Node IDs, parent refs, and optional per-node metadata (tags, scores, provenance).
-
-## Using real embeddings (optional, not wired yet)
-
-If you want to experiment with real embeddings:
-
-- OpenAI:
-  - Set `OPENAI_API_KEY` (and optionally `OPENAI_ENDPOINT` or Azure vars `AZURE_OPENAI_*`).
-  - `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=text-embedding-3-large` (default).
-- Hugging Face / local:
-  - `EMBEDDING_PROVIDER=hf`, `EMBEDDING_MODEL=intfloat/e5-base-v2` (default), `DEVICE=mps|cuda|cpu`.
-
-Then replace the local `embed()` function in `SkillTree.py` with something like:
+Apply updates:
 
 ```python
-from embeddings import get_embedder
-_embedder = get_embedder()
-
-def embed(text: str):
-    return _embedder.embed(text)
+from skilltree_engine.runtime import UpdateOp, apply_updates
+ops = [UpdateOp(op="ADD", skill_id="skill.parse", payload={
+  "id": "skill.parse", "name": "Parse Log", "description": "Parse raw behavior log", "confidence": 0.6
+})]
+apply_updates(st, ops)
 ```
 
-Note: this will change vector dimensionality; everything else (cosine, thresholds) should still work.
+Retrieve and schedule:
 
-## Notes
+```python
+from skilltree_engine.runtime import retrieve_for_query, schedule_to_target
+hits = retrieve_for_query(st, "intent:analysis user metrics")
+chain = schedule_to_target(st, "skill.generate_report")
+```
 
-- If you run `skilltree_demo.py` as-is, you’ll likely get import or attribute errors because it expects a different interface. Prefer running `SkillTree.py` directly for now.
-- For reproducible demos, consider setting `PYTHONHASHSEED=0` before invoking Python.
+## Validation & Integrity
+
+`SkillTree.validate()` checks:
+1. Missing references (pre/post/subskills)
+2. Cycles via DFS over directed edges (postconditions + subskills)
+
+Use `gap_skills()` and `suggest_missing_skills()` to patch holes before execution.
+
+### Semantic Retrieval
+
+Build a semantic index and search by description-level intent:
+
+```python
+from skilltree_engine.semantic import semantic_search
+hits = semantic_search(st, "mixture-of-experts long context routing", top_k=5)
+for skill, score in hits:
+  print(skill.id, score)
+```
+
+The runtime convenience wrapper `retrieve_semantic` (see `runtime.py`) mirrors this API and is used in the pipeline demos.
+
+### Decomposition Script
+
+Generate additional subskills from descriptive fragments (useful for making second/third layers):
+
+```bash
+python -m skilltree_engine.decompose_skills outputs/skilltree/llm_literature_review_nested.json
+```
+
+This writes `*_decomposed.json` alongside the input and runs a validation pass. Adjust heuristics or caps in `decompose_skills.py` to suit your data.
+
+## Extending Retrieval
+
+Lexical + semantic hybrid retrieval now exists (intent token matcher + bag-of-words cosine). Upcoming improvements:
+1. Add contextual filters (confidence thresholds, recent usage decay).
+2. Support external vector stores (e.g., FAISS/Chroma) for large graphs.
+3. Blend retrieval results with reinforcement signals (success/failure).
+
+## Planned Enhancements
+
+1. Confidence adaptation policies (success/failure reinforcement).
+2. Skill versioning & provenance chains.
+3. Multi-root scenario support (parallel high-level tasks).
+4. Persistent store (SQLite / LiteLLM / Chroma) for large trees.
+5. Graph-based semantic traversal (success probability / cost heuristics).
+
+## Migration Notes
+
+Removed legacy prototype files (`skilltree_extended.py`, `prompt.py`, old clustering notebooks) in favor of unified engine. If you need historical clustering-based skill generation, archive those scripts separately before pruning.
 
 ## License
 
-Prototype code — no license declared. Add one if you plan to share externally.
+TBD – add an open-source license (e.g., MIT) if distributing.
+
+## Attribution
+
+Skill schema & prompt aligned with user-provided production specification (2025-11-14).
+

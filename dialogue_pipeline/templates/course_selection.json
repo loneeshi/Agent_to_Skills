@@ -1,0 +1,92 @@
+{
+  "task_type": "course_selection",
+  "schema_fields": [
+    "goal",
+    "roles",
+    "pass_budgets",
+    "courses",
+    "constraints",
+    "edge_cases"
+  ],
+  "course_slots": {
+    "mental_health": "PSYC003116100",
+    "linear_algebra": "COMS0031131032(2)",
+    "military_theory": "GFJ003111100(2)",
+    "math_analysis": "COMS0031121018",
+    "programming": "COMS0031121013",
+    "programming_for_everyone": "COMS0031131026(2)",
+    "innovation": "GE-PTI-112"
+  },
+  "intent_chain": [
+    {
+      "id": "opening",
+      "speaker": "system",
+      "summary": "Greet and set context with latest popularity data.",
+      "required_slots": ["goal", "popularity_highlights"],
+      "branch": "offer optional data dump before proposing changes"
+    },
+    {
+      "id": "s_pass_assignment",
+      "speaker": "system",
+      "summary": "Assign S-Pass to the top-priority wellness course.",
+      "required_slots": ["courses.mental_health", "pass_budgets.compulsory.S"],
+      "branch": "user can request justification or reject, causing data_deep_dive"
+    },
+    {
+      "id": "compulsory_rebalance",
+      "speaker": "system",
+      "summary": "Reallocate former S-Pass course to A-Pass and fill remaining compulsory A-Pass slot.",
+      "required_slots": ["courses.linear_algebra", "courses.military_theory"],
+      "branch": "user may negotiate to keep math higher priority"
+    },
+    {
+      "id": "downgrade_core",
+      "speaker": "system",
+      "summary": "Downgrade less risky math/programming courses to B-Passes.",
+      "required_slots": ["courses.math_analysis", "courses.programming", "courses.programming_for_everyone"],
+      "branch": "user may ask for seat counts or express concern"
+    },
+    {
+      "id": "elective_upgrade",
+      "speaker": "system",
+      "summary": "Upgrade Innovation & Entrepreneurship to elective A-Pass.",
+      "required_slots": ["courses.innovation"],
+      "branch": "user may question workload or request swap"
+    },
+    {
+      "id": "validation",
+      "speaker": "system",
+      "summary": "Summarize mapping, verify pass budgets, log decision",
+      "required_slots": ["courses", "pass_budgets"],
+      "branch": "user can tweak one item then reconfirm"
+    },
+    {
+      "id": "closure",
+      "speaker": "system",
+      "summary": "Confirm submission or schedule follow-up.",
+      "required_slots": [],
+      "branch": null
+    }
+  ],
+  "utterance_templates": {
+    "system": {
+      "opening": "Here’s the latest popularity snapshot: {{popularity_highlights}}. Goal is {{goal}}.",
+      "s_pass_assignment": "Mental Health & Development is spiking, so I recommend giving it the S-Pass. Okay to lock that in?",
+      "compulsory_rebalance": "Let’s slide Linear Algebra to an A-Pass and use the other A on Military Theory to avoid a waitlist.",
+      "downgrade_core": "Mathematical Analysis, Programming, and Programming for Everyone can safely shift to B-Passes; seats remain open.",
+      "elective_upgrade": "Innovation & Entrepreneurship just surged, so upgrading it to the elective A-Pass keeps you ahead.",
+      "validation": "Final mapping: {{mapping_summary}}. Compulsory/Elective budgets stay within limits. Can you confirm?",
+      "closure": "Great, I’ll note the decision and prep submission."
+    },
+    "user": {
+      "ack": "Sounds good to me—let’s keep that priority order.",
+      "concern_math": "Can we double-check seat counts for Mathematical Analysis before demoting it?",
+      "swap_request": "What if we keep Programming at A-Pass and leave Innovation as B?"
+    }
+  },
+  "prompt_scaffolds": {
+    "intent_generator": "Given the schema {{schema}}, produce an ordered list of intents covering the required slots and edge cases.",
+    "utterance_synthesizer": "For intent {{intent_id}} with summary {{summary}} and slots {{slots}}, craft a {{speaker}} utterance in a supportive academic advising tone.",
+    "style_rewriter": "Rewrite: {{utterance}} in a warmer tone while preserving slot values and commitments."
+  }
+}
