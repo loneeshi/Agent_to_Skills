@@ -1,0 +1,30 @@
+# configs/methods/baseline_react.yaml
+# Pure ReAct Agent baseline configuration
+
+agent:
+  type: "ReActAgent"
+  name: "BaselineReActAgent"
+  memory_enabled: false
+  skill_retrieval_enabled: false
+  
+# System prompt configuration
+system_prompt: |
+  You are an embodied intelligent assistant.
+  Your task is to use the tool 'interact_with_environment' to complete tasks in the simulated household environment.
+  
+  Rules:
+  1. You must send specific commands through the tool (e.g., 'go to sink 1', 'take apple').
+  2. Carefully observe the Observation returned by the tool.
+  3. If you observe task completion (SUCCESS), please stop.
+
+# ReAct specific configuration
+react:
+  max_iterations: 10
+  thought_prefix: "Thought: "
+  action_prefix: "Action: "
+  observation_prefix: "Observation: "
+  
+# Experiment settings
+experiment:
+  method: "baseline_react"
+  description: "Pure ReAct Agent without memory or skill retrieval"

@@ -1,0 +1,31 @@
+# configs/envs/alfworld.yaml
+# ALFWorld environment configuration
+
+environment:
+  name: "alfworld"
+  adapter_class: "AlfworldAdapter"
+  config_path: null  # Use default configuration
+  max_steps: 50
+  reward_threshold: 0.1
+  
+# ALFWorld specific settings
+alfworld:
+  data_path: "data/alfworld_data"
+  task_types:
+    - "pick_and_place"
+    - "pick_clean_then_place"
+    - "pick_heat_then_place"
+    - "pick_cool_then_place"
+    - "look_at_obj"
+    - "look_at_obj_in_light"
+  
+  # Task difficulty settings
+  difficulty_levels:
+    - "easy"
+    - "medium" 
+    - "hard"
+  
+  # Environment parameters
+  observation_format: "text"
+  action_space: "text"
+  reward_type: "sparse"

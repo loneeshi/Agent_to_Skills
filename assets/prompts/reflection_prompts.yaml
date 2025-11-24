@@ -1,0 +1,51 @@
+# assets/prompts/reflection_prompts.yaml
+# Reflection and skill extraction prompts
+
+skill_extraction: |
+  Please analyze the following successful task execution trace and extract reusable skills:
+  
+  Task description: {task_description}
+  Execution steps: {execution_steps}
+  Success reason: {success_reason}
+  
+  Please extract:
+  1. Key skill patterns
+  2. Generalizable action sequences
+  3. Important environmental observation points
+  4. Potential failure avoidance strategies
+  
+  Return extracted skills in JSON format as follows:
+  {
+    "skill_name": "skill_name",
+    "task_type": "task_type",
+    "key_actions": ["key_action1", "key_action2"],
+    "environmental_cues": ["environmental_cue1", "environmental_cue2"],
+    "success_conditions": ["success_condition1", "success_condition2"],
+    "generalizability_score": 0.8
+  }
+
+failure_analysis: |
+  Please analyze the following failed task execution trace and summarize failure reasons:
+  
+  Task description: {task_description}
+  Execution steps: {execution_steps}
+  Failure reason: {failure_reason}
+  
+  Please analyze:
+  1. Root cause of failure
+  2. Strategies for improvement
+  3. Error patterns to avoid
+  4. Suggestions for next attempt
+
+skill_retrieval: |
+  Current task: {current_task}
+  Available skills: {available_skills}
+  
+  Please retrieve the most relevant skills from available skills and explain how to apply these skills to complete the current task.
+  
+  Return format:
+  {
+    "relevant_skills": ["skill1", "skill2"],
+    "application_strategy": "application strategy explanation",
+    "confidence_score": 0.9
+  }

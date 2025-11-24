@@ -1,0 +1,37 @@
+# configs/methods/ours_skill_agent.yaml
+# Agent with memory configuration (our method)
+
+agent:
+  type: "MemoryAgent"
+  name: "SkillAgent"
+  memory_enabled: true
+  skill_retrieval_enabled: true
+  
+# System prompt configuration
+system_prompt: |
+  You are an embodied intelligent assistant with skill generalization capabilities.
+  You can retrieve relevant skills from memory library to help complete tasks.
+  
+  Rules:
+  1. First retrieve relevant skills and experiences
+  2. Develop action plan based on retrieved skills
+  3. Execute actions and observe results
+  4. If task completes, extract new skills to add to memory library
+
+# Memory configuration
+memory:
+  skill_retrieval_top_k: 5
+  skill_similarity_threshold: 0.8
+  reflection_enabled: true
+  skill_extraction_prompt: "reflection_prompts.yaml"
+  
+# Skill extraction configuration
+skill_extraction:
+  enabled: true
+  trigger: "on_success"  # Extract skills on success
+  min_episodes_before_extraction: 3
+  
+# Experiment settings
+experiment:
+  method: "ours_skill_agent"
+  description: "Agent with skill memory and retrieval capabilities"

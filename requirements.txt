@@ -1,0 +1,11 @@
+# Core dependencies for Agent Experience Generalization project
+agentscope>=0.0.1
+alfworld>=0.3.0
+dashscope>=1.0.0
+
+# Additional dependencies that may be needed
+numpy>=1.21.0
+pandas>=1.3.0
+pyyaml>=5.4.0
+requests>=2.25.0
+tqdm>=4.62.0
